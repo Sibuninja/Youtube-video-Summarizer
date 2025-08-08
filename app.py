@@ -1,68 +1,59 @@
-from flask import Flask, render_template_string, request
-import summarizer
-import audio_transcriber
-import pytube
 import os
-import utils
+from flask import Flask, render_template, request
+from utils import download_youtube_audio
+from audio_transcriber import transcribe_audio_with_whisper
+import requests
+from dotenv import load_dotenv
+
+# Load your Groq API key from .env
+load_dotenv()
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+
 app = Flask(__name__)
 
-@app.route('/', methods=['GET', 'POST'])
+@app.route("/", methods=["GET", "POST"])
 def index():
     summary = None
     error = None
-    if request.method == 'POST':
-        url = request.form.get('youtube_url')
+
+    if request.method == "POST":
+        url = request.form.get("youtube_url", "").strip()
         if not url:
-            error = "Please enter a YouTube video URL."
+            error = "Please enter a valid YouTube URL."
         else:
             try:
-                # Download audio from YouTube (store in project folder)
-                audio_path = utils.download_youtube_audio(url, output_path=os.path.dirname(__file__))
-                # Transcribe audio
-                transcript = audio_transcriber.transcribe(audio_path)
-                # Summarize transcript
-                summary = summarizer.summarize(transcript)
+                # 1. Download audio
+                mp3_path = download_youtube_audio(url)
+
+                # 2. Transcribe with Whisper
+                transcript = transcribe_audio_with_whisper(mp3_path)
+                if not transcript:
+                    raise ValueError("Transcription returned empty text.")
+
+                # 3. Summarize via Groq
+                payload = {
+                    "model": "llama3-8b-8192",
+                    "messages": [
+                        {"role": "system", "content": "You are a helpful assistant that summarizes video transcripts."},
+                        {"role": "user",   "content": f"Summarize this transcript:\n\n{transcript}"}
+                    ],
+                    "temperature": 0.7
+                }
+                headers = {
+                    "Authorization": f"Bearer {GROQ_API_KEY}",
+                    "Content-Type": "application/json"
+                }
+                r = requests.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    json=payload, headers=headers, timeout=60
+                )
+                r.raise_for_status()
+                summary = r.json()["choices"][0]["message"]["content"]
+
             except Exception as e:
-                import traceback
-                tb = traceback.format_exc()
-                print(tb)
-                error = f"Error type: {type(e).__name__}<br>Message: {str(e)}<br><br>Traceback:<br><pre>{tb}</pre>"
-                error += "<br><b>Possible reasons:</b> Invalid/unsupported YouTube URL, video is private, age-restricted, region-blocked, or pytube is outdated. Try a different public video or update pytube."
-    return render_template_string('''
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>YouTube Video Summarizer</title>
-            <style>
-                body { font-family: Arial, sans-serif; margin: 40px; background: #f7f7f7; }
-                .container { max-width: 600px; margin: auto; background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 8px #ccc; }
-                input[type=text] { width: 100%; padding: 10px; margin-bottom: 10px; border-radius: 4px; border: 1px solid #ccc; }
-                button { padding: 10px 20px; border: none; background: #007bff; color: #fff; border-radius: 4px; cursor: pointer; }
-                button:hover { background: #0056b3; }
-                .summary { margin-top: 20px; background: #e9ecef; padding: 15px; border-radius: 4px; }
-                .error { color: red; margin-top: 10px; }
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <h2>YouTube Video Summarizer</h2>
-                <form method="post">
-                    <input type="text" name="youtube_url" placeholder="Enter YouTube video URL" required />
-                    <button type="submit">Summarize</button>
-                </form>
-                {% if summary %}
-                    <div class="summary">
-                        <h4>Summary:</h4>
-                        <p>{{ summary }}</p>
-                    </div>
-                {% endif %}
-                {% if error %}
-                    <div class="error">{{ error }}</div>
-                {% endif %}
-            </div>
-        </body>
-        </html>
-    ''', summary=summary, error=error)
+                error = str(e)
+
+    return render_template("index.html", summary=summary, error=error)
 
 if __name__ == "__main__":
     app.run(debug=True)

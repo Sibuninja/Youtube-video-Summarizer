@@ -1,19 +1,21 @@
-import os
-from pytube import YouTube
-from moviepy.editor import AudioFileClip
+import os, time
+import yt_dlp
 
 def download_youtube_audio(url, output_path="downloads"):
+    """Downloads the best audio stream from the given YouTube URL and returns the MP3 path."""
     os.makedirs(output_path, exist_ok=True)
-    yt = YouTube(url)
-    stream = yt.streams.filter(only_audio=True).first()
-    if stream is None:
-        raise ValueError("No audio stream found for this video.")
-    audio_path = stream.download(output_path=output_path, filename="audio.mp4")
-    return audio_path
-
-def extract_audio_to_wav(mp4_path, output_path="downloads"):
-    output_wav = os.path.join(output_path, "audio.wav")
-    audio_clip = AudioFileClip(mp4_path)
-    audio_clip.write_audiofile(output_wav, codec='pcm_s16le')
-    audio_clip.close()
-    return output_wav
+    timestamp = int(time.time())
+    template = os.path.join(output_path, f"audio_{timestamp}.%(ext)s")
+    opts = {
+        "format": "bestaudio/best",
+        "outtmpl": template,
+        "postprocessors": [{
+            "key": "FFmpegExtractAudio",
+            "preferredcodec": "mp3",
+            "preferredquality": "192",
+        }],
+        "quiet": True
+    }
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        ydl.download([url])
+    return template.replace("%(ext)s", "mp3")
