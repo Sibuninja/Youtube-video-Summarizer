@@ -2,6 +2,9 @@
 
 A Flask web application that downloads audio from a YouTube video, transcribes it using **Whisper**, and summarizes it using the **Groq API**.
 
+## 🖼 Interface Preview
+![Interface Demo](assets/interface_demo.png)
+
 ---
 
 ## ✨ Features
@@ -51,9 +54,8 @@ cpp
 Copy
 Edit
 http://127.0.0.1:5000
-🖼 Interface Preview
-## 🖼 Interface Preview
-![Interface Demo](assets/interface_demo.png)
+
+
 
 
 
