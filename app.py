@@ -5,16 +5,21 @@ from audio_transcriber import transcribe_audio_with_whisper
 import requests
 from dotenv import load_dotenv
 
-# Load your Groq API key from .env
-load_dotenv()
+# Load your Groq API key from .env\load_dotenv()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-app = Flask(__name__)
+# Point Flask at templates folder explicitly
+template_dir = os.path.join(os.path.dirname(__file__), 'templates')
+app = Flask(__name__, template_folder=template_dir)
+print("🌟 Template folder resolved to:", template_dir)
+print("🌟 Index template exists:", os.path.exists(os.path.join(template_dir, 'index.html')))
 
 @app.route("/", methods=["GET", "POST"])
 def index():
     summary = None
     error = None
+    transcript = None
+    url = None  # ✅ initialize to avoid UnboundLocalError
 
     if request.method == "POST":
         url = request.form.get("youtube_url", "").strip()
@@ -25,17 +30,17 @@ def index():
                 # 1. Download audio
                 mp3_path = download_youtube_audio(url)
 
-                # 2. Transcribe with Whisper
+                # 2. Transcribe
                 transcript = transcribe_audio_with_whisper(mp3_path)
                 if not transcript:
                     raise ValueError("Transcription returned empty text.")
 
-                # 3. Summarize via Groq
+                # 3. Summarize with Groq
                 payload = {
                     "model": "llama3-8b-8192",
                     "messages": [
                         {"role": "system", "content": "You are a helpful assistant that summarizes video transcripts."},
-                        {"role": "user",   "content": f"Summarize this transcript:\n\n{transcript}"}
+                        {"role": "user", "content": f"Summarize this transcript:\n\n{transcript}"}
                     ],
                     "temperature": 0.7
                 }
@@ -53,7 +58,14 @@ def index():
             except Exception as e:
                 error = str(e)
 
-    return render_template("index.html", summary=summary, error=error)
+    return render_template(
+        "index.html",
+        transcript=transcript,
+        summary=summary,
+        error=error,
+        video_url=url
+    )
+
 
 if __name__ == "__main__":
     app.run(debug=True)
